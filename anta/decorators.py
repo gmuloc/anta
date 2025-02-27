@@ -154,6 +154,7 @@ def skip_on_platforms(platforms: list[str]) -> Callable[[F], F]:
             This wrapper inspects the hardware model of the device the test is run on.
             If the model is in the list of specified platforms, the test is either skipped.
             """
+            print(args)
             anta_test = args[0]
 
             if anta_test.result.result != "unset":

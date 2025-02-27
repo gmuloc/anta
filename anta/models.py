@@ -530,6 +530,7 @@ class AntaTest(ABC):
         for index, data in enumerate(eos_data or []):
             self.instance_commands[index].output = data
 
+    @classmethod
     def __init_subclass__(cls) -> None:
         """Verify that the mandatory class attributes are defined and set name and description if not set."""
         mandatory_attributes = ["categories", "commands"]

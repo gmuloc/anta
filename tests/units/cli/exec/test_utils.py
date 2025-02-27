@@ -237,6 +237,8 @@ async def test_collect_commands(
     caplog.set_level(logging.INFO)
     root_dir = tmp_path
 
+    print(commands, id(commands))
+
     async def mock_connect_inventory() -> None:
         """Mock connect_inventory coroutine."""
         for name, device in inventory.items():
@@ -291,24 +293,27 @@ async def test_collect_commands(
         json_path = root_dir / device.name / "json"
         text_path = root_dir / device.name / "text"
         if "json_format" in commands:
+            expected_file_number = len(commands["json_format"])
             # Handle undefined command
             if "undefined command" in commands["json_format"]:
                 assert "ERROR" in caplog.text
                 assert "Command 'undefined command' failed on device-0: Invalid input (at token 0: 'undefined')" in caplog.text
                 # Verify we don't claim it was collected
                 assert f"Collected command 'undefined command' from device {device.name}" not in caplog.text
-                commands["json_format"].remove("undefined command")
+                expected_file_number -= 1
             # Handle uncaught exception
             elif "uncaught exception" in commands["json_format"]:
                 assert "ERROR" in caplog.text
                 assert "Error when collecting commands: " in caplog.text
                 # Verify we don't claim it was collected
                 assert f"Collected command 'uncaught exception' from device {device.name}" not in caplog.text
-                commands["json_format"].remove("uncaught exception")
+                expected_file_number -= 1
 
             assert json_path.is_dir()
-            assert len(list(Path.iterdir(json_path))) == len(commands["json_format"])
+            assert len(list(Path.iterdir(json_path))) == expected_file_number
             for command in commands["json_format"]:
+                if command in ["uncaught exception", "undefined command"]:
+                    continue
                 assert Path.is_file(json_path / f"{safe_command(command)}.json")
                 assert f"Collected command '{command}' from device {device.name}" in caplog.text
         if "text_format" in commands:

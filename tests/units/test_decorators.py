@@ -66,6 +66,7 @@ async def test_skip_on_platforms(device: AntaDevice, platforms: list[str], devic
 
     Leverage the ExampleTest defined at the top of the module.
     """
+    old_test = ExampleTest.test
     # Apply the decorator - ignoring mypy warning - this is for testing
     ExampleTest.test = skip_on_platforms(platforms)(ExampleTest.test)  # type: ignore[method-assign]
 
@@ -75,3 +76,4 @@ async def test_skip_on_platforms(device: AntaDevice, platforms: list[str], devic
     await test_instance.test()
 
     assert test_instance.result.result == expected_result
+    ExampleTest.test = old_test

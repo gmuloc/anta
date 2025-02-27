@@ -99,3 +99,6 @@ venv.bak/
 
 # VScode settings
 .vscode
+
+# Mutant
+mutants/

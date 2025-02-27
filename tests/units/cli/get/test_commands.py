@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import filecmp
+import sys
 from pathlib import Path
 from typing import TYPE_CHECKING
 from unittest.mock import ANY, patch
@@ -286,7 +287,7 @@ def test_from_ansible_overwrite(
     if tmp_inv.exists():
         assert not filecmp.cmp(tmp_inv, expected_anta_inventory_path)
 
-    with patch("sys.stdin.isatty", return_value=is_tty):
+    with patch("anta.cli.get.utils.stdin.isatty", return_value=is_tty):
         result = click_runner.invoke(anta, cli_args, env=temp_env, input=prompt)
 
     assert result.exit_code == expected_exit
@@ -445,12 +446,16 @@ def test_get_tests_local_module(click_runner: CliRunner) -> None:
 
     cwd = Path.cwd()
     local_module_parent_path = Path(__file__).parent
-    with patch("anta.cli.get.utils.Path.cwd", return_value=local_module_parent_path):
+    with patch("anta.cli.get.utils.Path.cwd", return_value=local_module_parent_path), patch("anta.cli.get.utils.sys.path", sys.path):
         result = click_runner.invoke(anta, cli_args)
 
     assert result.exit_code == ExitCode.OK
 
     # In the rare case where people would be running `pytest .` in this directory
     if cwd != local_module_parent_path:
-        assert "injecting CWD in PYTHONPATH and retrying..." in result.output
+        try:
+            assert "injecting CWD in PYTHONPATH and retrying..." in result.output
+        except Exception as e:
+            print(cwd, local_module_parent_path)
+            raise e
     assert "No test found in 'local_module'" in result.output

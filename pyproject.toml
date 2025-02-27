@@ -186,6 +186,7 @@ filterwarnings = [
   "ignore:TripleDES:cryptography.utils.CryptographyDeprecationWarning",
 
 ]
+# pythonpath = ["."]
 
 
 [tool.coverage.run]
@@ -487,3 +488,12 @@ min-similarity-lines=10
 signature-mutators="click.decorators.option"
 load-plugins="pylint_pydantic"
 extension-pkg-whitelist="pydantic"
+
+
+################################
+# Mutmut
+################################
+[tool.mutmut]
+paths_to_mutate = [ "anta/" ]
+tests_dir = [ "tests/" ]
+debug = true
