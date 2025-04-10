@@ -135,3 +135,15 @@ repos:
         pass_filenames: false
         additional_dependencies:
           - anta[cli]
+
+  - repo: https://github.com/RobertCraigie/pyright-python
+    rev: v1.1.399
+    hooks:
+      - id: pyright
+        name: Check typing with pyright
+        additional_dependencies:
+          - anta[cli]
+          - types-PyYAML
+          - types-requests
+          - types-pyOpenSSL
+          - pytest

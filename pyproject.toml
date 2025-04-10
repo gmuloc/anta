@@ -492,3 +492,17 @@ min-similarity-lines=10
 signature-mutators="click.decorators.option"
 load-plugins="pylint_pydantic"
 extension-pkg-whitelist="pydantic"
+
+
+################################
+# Pyright
+################################
+[tool.pyright]
+include = [
+  "anta",
+  ".github",
+  "examples",
+  "asynceapi",
+  "tests"
+]
+pythonVersion = "3.9"
