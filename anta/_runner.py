@@ -11,12 +11,12 @@ from collections import defaultdict
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from inspect import getcoroutinelocals
+from os import environ
 from typing import TYPE_CHECKING, Any
 
 from pydantic import BaseModel, ConfigDict
 
 from anta import GITHUB_SUGGESTION
-from anta.cli.console import console
 from anta.inventory import AntaInventory
 from anta.logger import anta_log_exception
 from anta.models import AntaTest
@@ -424,8 +424,12 @@ class AntaRunner:
 
     def _log_run_information(self, ctx: AntaRunContext) -> None:
         """Log ANTA run information and potential resource limit warnings."""
+        # TODO: really we should not do this here
+        console_width: str | None = environ.get("COLUMNS")
+        if console_width is None or not console_width.isdigit():
+            console_width = "80"
         # 34 is an estimate of the combined length of timestamp, log level name, filename and spacing added by the Rich logger
-        width = min(int(console.width) - 34, len("  Potential connections needed: 100000000\n"))
+        width = min(int(console_width) - 34, len("  Potential connections needed: 100000000\n"))
 
         # Build device information
         device_lines = [
