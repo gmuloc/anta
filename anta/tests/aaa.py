@@ -31,7 +31,7 @@ class VerifyTacacsSourceIntf(AntaTest):
     ```yaml
     anta.tests.aaa:
       - VerifyTacacsSourceIntf:
-          intf: Management0
+          int=== Management0
           vrf: MGMT
     ```
     """

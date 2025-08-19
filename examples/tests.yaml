@@ -54,7 +54,7 @@ anta.tests.aaa:
       vrf: MGMT
   - VerifyTacacsSourceIntf:
       # Verifies TACACS source-interface for a specified VRF.
-      intf: Management0
+      int=== Management0
       vrf: MGMT
 anta.tests.avt:
   - VerifyAVTPathHealth:

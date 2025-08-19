@@ -9,6 +9,8 @@ from contextlib import redirect_stdout
 from pathlib import Path
 from sys import path
 
+from yaml import YAMLError
+
 # Override global path to load anta from pwd instead of any installed version.
 path.insert(0, str(Path(__file__).parents[2]))
 
@@ -20,10 +22,21 @@ os.environ["TERM"] = "dumb"
 # imported after TERM is set to act upon rich console.
 from anta.cli.get.commands import tests  # noqa: E402
 
-with examples_tests_path.open("w") as f:
-    f.write("---\n")
-    with redirect_stdout(f):
-        # removing the style
-        tests()
+try:
+    with examples_tests_path.open("w") as f:
+        f.write("---\n")
+        with redirect_stdout(f):
+            # removing the style
+            tests()
+except SystemExit:
+    pass
 
 os.environ["TERM"] = prev
+
+from anta.catalog import AntaCatalog
+
+try:
+    _ = AntaCatalog.parse(examples_tests_path)
+except (TypeError, ValueError, YAMLError, OSError) as e:
+    msg = f"Failed to parse catalog: {e}"
+    raise Exception(msg) from None
