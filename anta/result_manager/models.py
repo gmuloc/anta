@@ -211,6 +211,15 @@ class TestResult(BaseTestResult):
         if message is not None:
             self.messages.append(message)
 
+    @classmethod
+    def rebuild_from_df(cls, data_dict: dict[str, Any]) -> TestResult:
+        """Rebuild a TestResult instance from the data dict retrieved from polar."""
+        atomic_results_dicts = data_dict.pop("atomic_results", None)
+        test_result = cls.model_construct(**data_dict)
+        if atomic_results_dicts:
+            test_result.atomic_results = [AtomicTestResult(parent=test_result, **atomic_res_dict) for atomic_res_dict in atomic_results_dicts]
+        return test_result
+
 
 @dataclass
 class DeviceStats:

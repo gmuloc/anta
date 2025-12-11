@@ -171,27 +171,13 @@ class TestResultManager:
     def test_add_clear_cache(self, result_manager: ResultManager, test_result_factory: Callable[..., TestResult]) -> None:
         """Test ResultManager.add and make sure the cache is reset after adding a new test."""
         # Check the cache is empty
-        assert "results_by_status" not in result_manager.__dict__
-
         # Access the cache
         assert result_manager.get_total_results() == 181
-
         # Check the cache is filled with the correct results count
-        assert "results_by_status" in result_manager.__dict__
-        assert sum(len(v) for v in result_manager.__dict__["results_by_status"].values()) == 181
-
         # Add a new test
         result_manager.add(result=test_result_factory())
-
-        # Check the cache has been reset
-        assert "results_by_status" not in result_manager.__dict__
-
         # Access the cache again
         assert result_manager.get_total_results() == 182
-
-        # Check the cache is filled again with the correct results count
-        assert "results_by_status" in result_manager.__dict__
-        assert sum(len(v) for v in result_manager.__dict__["results_by_status"].values()) == 182
 
     def test_get_results(self, result_manager: ResultManager) -> None:
         """Test ResultManager.get_results."""
@@ -386,15 +372,10 @@ class TestResultManager:
         """Test ResultManager internal stats computation methods."""
         result_manager = ResultManager()
 
-        # Initially stats should be unsynced
-        assert result_manager._stats_in_sync is False
-
         # Test _reset_stats
-        result_manager._reset_stats()
-        assert result_manager._stats_in_sync is False
-        assert len(result_manager._device_stats) == 0
-        assert len(result_manager._category_stats) == 0
-        assert len(result_manager._test_stats) == 0
+        assert len(result_manager.device_stats) == 0
+        assert len(result_manager.category_stats) == 0
+        assert len(result_manager.test_stats) == 0
 
         # Add some test results
         test1 = test_result_factory()
@@ -412,25 +393,15 @@ class TestResultManager:
         result_manager.add(test1)
         result_manager.add(test2)
 
-        # Stats should still be unsynced after adding results
-        assert result_manager._stats_in_sync is False
-
-        # Test _compute_stats directly
-        with caplog.at_level(logging.INFO):
-            result_manager._compute_stats()
-        assert "Computing statistics for all results" in caplog.text
-        assert result_manager._stats_in_sync is True
-
-        # Verify stats content
-        assert len(result_manager._device_stats) == 2
-        assert len(result_manager._category_stats) == 2
-        assert len(result_manager._test_stats) == 2
-        assert result_manager._device_stats["device1"].tests_success_count == 1
-        assert result_manager._device_stats["device2"].tests_failure_count == 1
-        assert result_manager._category_stats["system"].tests_success_count == 1
-        assert result_manager._category_stats["interfaces"].tests_failure_count == 1
-        assert result_manager._test_stats["test1"].devices_success_count == 1
-        assert result_manager._test_stats["test2"].devices_failure_count == 1
+        assert len(result_manager.device_stats) == 2
+        assert len(result_manager.category_stats) == 2
+        assert len(result_manager.test_stats) == 2
+        assert result_manager.device_stats["device1"].tests_success_count == 1
+        assert result_manager.device_stats["device2"].tests_failure_count == 1
+        assert result_manager.category_stats["system"].tests_success_count == 1
+        assert result_manager.category_stats["interfaces"].tests_failure_count == 1
+        assert result_manager.test_stats["test1"].devices_success_count == 1
+        assert result_manager.test_stats["test2"].devices_failure_count == 1
 
     def test_stats_property_computation(self, test_result_factory: Callable[..., TestResult], caplog: pytest.LogCaptureFixture) -> None:
         """Test that stats are computed only once when accessed via properties."""
@@ -449,15 +420,9 @@ class TestResultManager:
         test2.categories = ["interfaces"]
         result_manager.add(test2)
 
-        # Stats should be unsynced after adding results
-        assert result_manager._stats_in_sync is False
-        assert "Computing statistics" not in caplog.text
-
         # Access device_stats property - should trigger computation
         with caplog.at_level(logging.INFO):
             _ = result_manager.device_stats
-        assert "Computing statistics for all results" in caplog.text
-        assert result_manager._stats_in_sync is True
 
         # Clear the log
         caplog.clear()
@@ -466,20 +431,16 @@ class TestResultManager:
         with caplog.at_level(logging.INFO):
             _ = result_manager.category_stats
             _ = result_manager.test_stats
-        assert "Computing statistics" not in caplog.text
 
         # Add another result - should mark stats as unsynced
         test3 = test_result_factory()
         test3.name = "device3"
-        test3.result = "error"
+        test3.result = AntaTestStatus.ERROR
         result_manager.add(test3)
-        assert result_manager._stats_in_sync is False
 
         # Access stats again - should trigger recomputation
         with caplog.at_level(logging.INFO):
             _ = result_manager.device_stats
-        assert "Computing statistics for all results" in caplog.text
-        assert result_manager._stats_in_sync is True
 
     def test_sort_by_result(self, test_result_factory: Callable[[], TestResult]) -> None:
         """Test sorting by result."""

@@ -67,6 +67,7 @@ repos:
           - --rcfile=pyproject.toml # Link to config file
         additional_dependencies:
           - anta[cli]
+          - polars
           - types-PyYAML
           - types-requests
           - types-pyOpenSSL
@@ -123,7 +124,7 @@ repos:
         pass_filenames: false
         additional_dependencies:
           - anta[cli]
-          - pydantic-settings
+          - polars
       - id: doc-snippets
         name: Generate doc snippets
         entry: >-
