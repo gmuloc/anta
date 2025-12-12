@@ -8,7 +8,7 @@ from __future__ import annotations
 import json
 import logging
 from functools import cached_property
-from typing import Any, Literal
+from typing import Any
 
 import polars as pl
 from typing_extensions import deprecated
@@ -18,9 +18,6 @@ from anta.result_manager.models import AntaTestStatus, TestResult
 from .models import CategoryStats, DeviceStats, TestStats
 
 logger = logging.getLogger(__name__)
-
-
-_STATUS_VALUES = ["unset", "success", "failure", "error", "skipped"]
 
 
 class ResultManager:
@@ -158,24 +155,33 @@ class ResultManager:
 
     @property
     def device_stats(self) -> dict[str, DeviceStats]:
-        """Get the device statistics calculated on demand from the Polars pl.DataFrame."""
-        return self._map_stats_to_dataclass("name", DeviceStats)
+        """Get device statistics for the ResultManager."""
+        self.ensure_dataframe_is_ready()  # Ensure readiness before query
 
-    @property
-    def category_stats(self) -> dict[str, CategoryStats]:
-        """Get the category statistics calculated on demand from the Polars pl.DataFrame."""
-        return self._map_stats_to_dataclass("categories", CategoryStats)
+        agg_expressions = DeviceStats._get_agg_expressions()  # noqa: SLF001
+        stats_list, key_col = self._execute_polars_query(self.df, "name", agg_expressions)
+
+        return self._map_and_handle_errors(stats_list, key_col, DeviceStats)
 
     @property
     def test_stats(self) -> dict[str, TestStats]:
-        """Get the test statistics calculated on demand from the Polars pl.DataFrame."""
-        return self._map_stats_to_dataclass("test", TestStats)
+        """Get test statistics for the ResultManager."""
+        self.ensure_dataframe_is_ready()  # Ensure readiness before query
+
+        agg_expressions = TestStats._get_agg_expressions()  # noqa: SLF001
+        stats_list, key_col = self._execute_polars_query(self.df, "test", agg_expressions)
+
+        return self._map_and_handle_errors(stats_list, key_col, TestStats)
 
     @property
-    @deprecated("This property is deprecated, use `category_stats` instead. This will be removed in ANTA v2.0.0.", category=DeprecationWarning)
-    def sorted_category_stats(self) -> dict[str, CategoryStats]:
-        """A property that returns the category_stats dictionary sorted by key name."""
-        return self.category_stats
+    def category_stats(self) -> dict[str, CategoryStats]:
+        """Get category statistics for the ResultManager."""
+        self.ensure_dataframe_is_ready()  # Ensure readiness before query
+
+        agg_expressions = CategoryStats._get_agg_expressions()  # noqa: SLF001
+        stats_list, key_col = self._execute_polars_query(self.df, "categories", agg_expressions, is_exploded=True)
+
+        return self._map_and_handle_errors(stats_list, key_col, CategoryStats)
 
     def _get_results_dicts_by_status(self) -> dict[AntaTestStatus, list[dict[str, Any]]]:
         """Return results grouped by status as lists of dictionaries (Polars native speed)."""
@@ -188,7 +194,6 @@ class ResultManager:
         for status_enum in AntaTestStatus:
             status_str = status_enum.value
 
-            # Filter the main pl.DataFrame by status value
             df_group = self.df.filter(pl.col("result") == status_str)
 
             if df_group.height > 0:
@@ -203,10 +208,8 @@ class ResultManager:
         if self.df.height == 0:
             return []
 
-        # Sort the pl.DataFrame efficiently by the 'category' column
         sorted_df = self.df.sort("category")
 
-        # Return the fast dictionary conversion
         return sorted_df.to_dicts()
 
     @cached_property
@@ -258,7 +261,6 @@ class ResultManager:
 
         df_final = self.df
 
-        # 2. Filtering by Status (Polars vectorized operation)
         if status is not None and len(status) > 0:
             status_values = [s.value for s in status]
             df_final = df_final.filter(pl.col("result").is_in(status_values))
@@ -270,9 +272,6 @@ class ResultManager:
                 msg = f"Invalid sort_by fields: {sort_by}. Accepted fields are: {list(accepted_fields)}"
                 raise ValueError(msg)
 
-            # Polars sorting expression to replicate Python's 'or ""' or 'or []' null handling
-            # It handles List<String> (like categories) by filling nulls with an empty list,
-            # and standard types by filling nulls with an empty string.
             sort_expressions = [
                 pl.col(field).fill_null(pl.lit([]).cast(pl.List(pl.Utf8))) if field == "categories" else pl.col(field).fill_null(pl.lit("")) for field in sort_by
             ]
@@ -320,9 +319,6 @@ class ResultManager:
 
         df_final = self.df
 
-        # Polars sorting expression to replicate Python's 'or ""' or 'or []' null handling
-        # It handles List<String> (like categories) by filling nulls with an empty list,
-        # and standard types by filling nulls with an empty string.
         sort_expressions = [
             pl.col(field).fill_null(pl.lit([]).cast(pl.List(pl.Utf8))) if field == "categories" else pl.col(field).fill_null(pl.lit("")) for field in sort_by
         ]
@@ -359,10 +355,8 @@ class ResultManager:
         if filtered_df.height == 0:
             return ResultManager()
 
-        # Calculate new status based on the filtered pl.DataFrame
         new_status, new_error_status = self._calculate_df_status(filtered_df)
 
-        # Create the new manager instance directly from the pl.DataFrame
         return ResultManager._from_df(df=filtered_df, status=new_status, error_status=new_error_status)
 
     @classmethod
@@ -382,7 +376,6 @@ class ResultManager:
         status_order = {AntaTestStatus.ERROR: 5, AntaTestStatus.FAILURE: 4, AntaTestStatus.SKIPPED: 3, AntaTestStatus.SUCCESS: 2, AntaTestStatus.UNSET: 1}
         reverse_status_order = {v: k for k, v in status_order.items()}
 
-        # Ensure all managers have processed their buffers and get non-empty pl.DataFrames
         non_empty_dfs: list[pl.DataFrame] = []
         max_severity_level = 0
         merged_error_status = False
@@ -392,7 +385,6 @@ class ResultManager:
             if rm.df.height > 0:
                 non_empty_dfs.append(rm.df)
 
-            # 2. Track highest status and error flag
             max_severity_level = max(max_severity_level, status_order.get(rm.status, 0))
             if rm.error_status:
                 merged_error_status = True
@@ -439,7 +431,6 @@ class ResultManager:
             else:
                 self.df = pl.concat([self.df, new_df])
 
-            # Empty the buffer
             self._results.clear()
 
     def _calculate_df_status(self, df: pl.DataFrame) -> tuple[AntaTestStatus, bool]:
@@ -464,85 +455,41 @@ class ResultManager:
 
         return new_status, new_error_status
 
-    def _calculate_stats_by_column(self, group_col: Literal["name", "test", "categories"]) -> list[dict[str, Any]]:
-        """Calculate status counts, category lists, and failed test lists grouped by a column using a single vectorized Polars operation."""
-        self.ensure_dataframe_is_ready()
-        if self.df.height == 0:
-            return []
+    # ======================================================================
+    # INTERNAL HELPERS for stats
+    # ======================================================================
+    @staticmethod
+    def _execute_polars_query(df: pl.DataFrame, group_col: str, agg_expressions: list[pl.Expr], *, is_exploded: bool = False) -> tuple[list[dict[str, Any]], str]:
+        """Execute the Polars aggregation pipeline and return the raw list of dictionaries and the grouping column names for stats."""
+        if df.height == 0:
+            return ([], group_col)
 
-        df_to_group = self.df
+        df_to_group = df
+        key_col = group_col
 
-        # Define the base expressions for status counts (e.g., tests_SUCCESS_count)
-        # These counts will represent device counts if grouped by test,
-        # or test counts if grouped by (device) name/categories.
-        agg_expressions = [(pl.col("result") == status).sum().alias(f"tests_{status}_count") for status in _STATUS_VALUES]
+        if is_exploded:
+            # Special handling for 'categories' (requires explode and key rename)
+            df_to_group = df.explode("categories").rename({"categories": "category"})
+            key_col = "category"
 
-        failure_statuses = [AntaTestStatus.FAILURE, AntaTestStatus.ERROR]
+        stats_df = df_to_group.group_by(key_col).agg(agg_expressions)
+        stats_list = stats_df.to_dicts()
 
-        if group_col == "name":
-            # Aggregations needed for DeviceStats
-            agg_expressions.extend(
-                [
-                    pl.col("categories").filter(pl.col("result").eq(AntaTestStatus.SKIPPED)).explode().unique().implode().alias("categories_skipped"),
-                    pl.col("categories").filter(pl.col("result").is_in(failure_statuses)).explode().unique().implode().alias("categories_failed"),
-                    pl.col("test").filter(pl.col("result").is_in(failure_statuses)).unique().alias("tests_failure"),
-                ]
-            )
+        return (stats_list, key_col)
 
-        if group_col == "test":
-            agg_expressions.append(pl.col("name").filter(pl.col("result").is_in(failure_statuses)).unique().alias("devices_failure"))
-
-        elif group_col == "categories":
-            # If grouping by categories, we must explode first, then group by the exploded column.
-            df_to_group = self.df.explode("categories").rename({"categories": group_col})
-
-        stats_df = df_to_group.group_by(group_col).agg(agg_expressions)
-
-        return stats_df.to_dicts()
-
-    def _map_stats_to_dataclass(
-        self, group_col: Literal["name", "test", "categories"], target_class: type[DeviceStats | CategoryStats | TestStats]
-    ) -> dict[str, Any]:
-        """Calculate stats, iterate over results, and map them to the target dataclass.
-
-        Handles the merging of counts and the category sets/failed test sets.
-        """
-        stats_list = self._calculate_stats_by_column(group_col)
+    def _map_and_handle_errors(self, stats_list: list[dict[str, Any]], key_col: str, target_class: type[CategoryStats | TestStats | DeviceStats]) -> dict[str, Any]:
+        """Perform final mapping loop, keying the result dictionary, and handling the mandatory logging and error propagation."""
         result_dict = {}
-
-        # Determine the required field prefix for the output
-        output_prefix = "devices_" if target_class is TestStats else "tests_"
-
         for d in stats_list:
-            # Get the key and pop it from the dict
-            key = d.pop(group_col)
-            kwargs = {}
-
-            # 1. Map Status Counts
-            for status in _STATUS_VALUES:
-                input_key = f"tests_{status}_count"
-                output_key = f"{output_prefix}{status.lower()}_count"
-
-                # Assign value from the Polars output key to the required dataclass input key
-                kwargs[output_key] = d.get(input_key, 0)
-
-            # 2. Map Sets
-            if target_class is DeviceStats and group_col == "name":
-                # These fields were aggregated in _calculate_stats_by_column when grouping by 'device'
-                kwargs["categories_failed"] = set(d.get("categories_failed", []))
-                kwargs["categories_skipped"] = set(d.get("categories_skipped", []))
-                kwargs["tests_failure"] = set(d.get("tests_failure", []))
-
-            elif target_class is TestStats and group_col == "test":
-                # This field was aggregated in _calculate_stats_by_column when grouping by 'test_name'
-                kwargs["devices_failure"] = set(d.get("devices_failure", []))
-
-            # 3. Instantiate the dataclass.
+            # Extract the key
+            key = d.pop(key_col)
             try:
-                result_dict[key] = target_class(**kwargs)
+                # Delegate instantiation and mapping to the target class
+                result_dict[key] = target_class.from_polars_dict(d)
             except TypeError as e:
+                # Mandatory logging and re-raising
                 logger.error("Error instantiating %s for key '%s': %s", target_class.__name__, key, e)
-                logger.debug("Kwargs used: %s", kwargs)
+                logger.debug("Kwargs used: %s", d)
                 raise
 
         return dict(sorted(result_dict.items()))
@@ -550,6 +497,12 @@ class ResultManager:
     # ----------------------------------------------------------------------
     # Deprecated land - cross the boundary at your own risk
     # ----------------------------------------------------------------------
+    @property
+    @deprecated("This property is deprecated, use `category_stats` instead. This will be removed in ANTA v2.0.0.", category=DeprecationWarning)
+    def sorted_category_stats(self) -> dict[str, CategoryStats]:
+        """A property that returns the category_stats dictionary sorted by key name."""
+        return self.category_stats
+
     @deprecated("This method is deprecated. This will be removed in ANTA v2.0.0.", category=DeprecationWarning)
     def filter_by_tests(self, tests: set[str]) -> ResultManager:
         """Get a filtered ResultManager that only contains specific tests."""

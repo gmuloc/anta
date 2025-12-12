@@ -11,6 +11,7 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any
 
+import polars as pl
 from pydantic import BaseModel, Field
 
 if sys.version_info >= (3, 12):
@@ -221,6 +222,12 @@ class TestResult(BaseTestResult):
         return test_result
 
 
+# Stats
+_STATUS_VALUES = ["unset", "success", "failure", "error", "skipped"]
+FAILURE_STATUSES = [AntaTestStatus.FAILURE, AntaTestStatus.ERROR]
+BASE_AGG_EXPRESSIONS = [(pl.col("result") == status).sum().alias(f"tests_{status}_count") for status in _STATUS_VALUES]
+
+
 @dataclass
 class DeviceStats:
     """Device statistics for a run of tests."""
@@ -234,6 +241,30 @@ class DeviceStats:
     categories_failed: set[str] = field(default_factory=set)
     categories_skipped: set[str] = field(default_factory=set)
 
+    @classmethod
+    def from_polars_dict(cls, d: dict[str, Any]) -> DeviceStats:
+        """Instantiate DeviceStats from a dictionary produced by Polars aggregation."""
+        kwargs: dict[str, Any] = _map_polars_counts(d, "tests_")
+
+        kwargs["categories_failed"] = set(d.get("categories_failed", []))
+        kwargs["categories_skipped"] = set(d.get("categories_skipped", []))
+        kwargs["tests_failure"] = set(d.get("tests_failure", []))
+
+        return cls(**kwargs)
+
+    @staticmethod
+    def _get_agg_expressions() -> list[pl.Expr]:
+        """Return the complete Polars expressions for DeviceStats."""
+        agg_exprs = BASE_AGG_EXPRESSIONS[:]
+        agg_exprs.extend(
+            [
+                _aggregate_unique_list_elements("categories", pl.col("result") == AntaTestStatus.SKIPPED).alias("categories_skipped"),
+                _aggregate_unique_list_elements("categories", pl.col("result").is_in(FAILURE_STATUSES)).alias("categories_failed"),
+                pl.col("test").filter(pl.col("result").is_in(FAILURE_STATUSES)).unique().alias("tests_failure"),
+            ]
+        )
+        return agg_exprs
+
 
 @dataclass
 class CategoryStats:
@@ -244,6 +275,17 @@ class CategoryStats:
     tests_failure_count: int = 0
     tests_error_count: int = 0
     tests_unset_count: int = 0
+
+    @classmethod
+    def from_polars_dict(cls, d: dict[str, Any]) -> CategoryStats:
+        """Instantiate CategoryStats from a dictionary produced by Polars aggregation."""
+        kwargs = _map_polars_counts(d, "tests_")
+        return cls(**kwargs)
+
+    @staticmethod
+    def _get_agg_expressions() -> list[pl.Expr]:
+        """Return the complete Polars expressions for CategoryStats."""
+        return BASE_AGG_EXPRESSIONS[:]
 
 
 @dataclass
@@ -256,3 +298,34 @@ class TestStats:
     devices_error_count: int = 0
     devices_unset_count: int = 0
     devices_failure: set[str] = field(default_factory=set)
+
+    @classmethod
+    def from_polars_dict(cls, d: dict[str, Any]) -> TestStats:
+        """Instantiate TestStats from a dictionary produced by Polars aggregation."""
+        kwargs: dict[str, Any] = _map_polars_counts(d, "devices_")
+
+        kwargs["devices_failure"] = set(d.get("devices_failure", []))
+
+        return cls(**kwargs)
+
+    @staticmethod
+    def _get_agg_expressions() -> list[pl.Expr]:
+        """Return the complete Polars expressions for TestStats."""
+        agg_exprs = BASE_AGG_EXPRESSIONS[:]
+        agg_exprs.append(pl.col("name").filter(pl.col("result").is_in(FAILURE_STATUSES)).unique().alias("devices_failure"))
+        return agg_exprs
+
+
+def _map_polars_counts(d: dict[str, Any], prefix: str) -> dict[str, int]:
+    """Map standard Polars counts to dataclass kwargs."""
+    kwargs = {}
+    for status in AntaTestStatus:
+        input_key = f"tests_{status.value}_count"
+        output_key = f"{prefix}{status.value.lower()}_count"
+        kwargs[output_key] = d.get(input_key, 0)
+    return kwargs
+
+
+def _aggregate_unique_list_elements(col: str, status_expr: pl.Expr) -> pl.Expr:
+    """Encapsulate the complex Polars logic for aggregating unique list elements."""
+    return pl.col(col).filter(status_expr).explode().unique().implode()
