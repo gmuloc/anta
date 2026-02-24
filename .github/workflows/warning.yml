@@ -20,10 +20,29 @@ jobs:
         run: |
           echo "::warning::This is a log warning message (no file reference)"
 
-      # Option 5: Check Annotation Warning (appears in PR Checks summary)
+      # Option 5: Check Annotation Warning (appears in check details, not summary box)
       - name: Check Annotation Warning
         run: |
-          echo "::warning file=.github/workflows/warning.yml,line=1::This warning appears in PR Checks summary"
+          echo "::warning file=.github/workflows/warning.yml,line=1::This warning appears in check details"
+
+      # Option 6: Neutral Check Run (appears as distinct status in checks box)
+      - name: Create Warning Check Run
+        uses: actions/github-script@v7
+        with:
+          script: |
+            await github.rest.checks.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              name: '⚠️ Warning Check',
+              head_sha: context.sha,
+              status: 'completed',
+              conclusion: 'neutral',
+              output: {
+                title: 'Warning: Action may be required',
+                summary: 'This is a warning that appears in the PR checks box',
+                text: 'Detailed warning information goes here.'
+              }
+            });
 
       # Option 2: PR Comment (appears in PR conversation)
       - name: PR Comment Warning
