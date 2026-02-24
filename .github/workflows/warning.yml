@@ -12,7 +12,16 @@ jobs:
     name: "Display Warning"
     runs-on: ubuntu-latest
     steps:
-      - name: Post Warning Comment
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      # Option 1: Log Warning (appears in Actions log only)
+      - name: Log Warning
+        run: |
+          echo "::warning::This is a log warning message"
+
+      # Option 2: PR Comment (appears in PR conversation)
+      - name: PR Comment Warning
         uses: actions/github-script@v7
         with:
           script: |
@@ -20,6 +29,39 @@ jobs:
               owner: context.repo.owner,
               repo: context.repo.repo,
               issue_number: context.issue.number,
-              body: '⚠️ **Warning**: This is a warning message for the pull request'
+              body: '⚠️ **Warning**: This is a PR comment warning message'
             })
+
+      # Option 3: Job Summary (appears in workflow run summary)
+      - name: Job Summary Warning
+        run: |
+          echo "## ⚠️ Warning" >> $GITHUB_STEP_SUMMARY
+          echo "This is a job summary warning message" >> $GITHUB_STEP_SUMMARY
+
+      # Option 4: File-specific Warning (appears on Files changed tab)
+      - name: File Warning on Random Changed File
+        uses: actions/github-script@v7
+        with:
+          script: |
+            // Get the list of files changed in this PR
+            const { data: files } = await github.rest.pulls.listFiles({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: context.issue.number
+            });
+
+            if (files.length === 0) {
+              core.warning('No files changed in this PR');
+              return;
+            }
+
+            // Pick a random file
+            const randomFile = files[Math.floor(Math.random() * files.length)];
+            const filename = randomFile.filename;
+
+            // Emit a warning annotation on line 1 of the random file
+            core.warning(`This is a file-specific warning on a randomly selected file`, {
+              file: filename,
+              startLine: 1
+            });
 
