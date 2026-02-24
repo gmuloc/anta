@@ -18,7 +18,12 @@ jobs:
       # Option 1: Log Warning (appears in Actions log only)
       - name: Log Warning
         run: |
-          echo "::warning::This is a log warning message"
+          echo "::warning::This is a log warning message (no file reference)"
+
+      # Option 5: Check Annotation Warning (appears in PR Checks summary)
+      - name: Check Annotation Warning
+        run: |
+          echo "::warning file=.github/workflows/warning.yml,line=1::This warning appears in PR Checks summary"
 
       # Option 2: PR Comment (appears in PR conversation)
       - name: PR Comment Warning
