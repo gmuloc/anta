@@ -49,9 +49,15 @@ jobs:
         uses: actions/github-script@v7
         with:
           script: |
-            const issueTitle = encodeURIComponent('🚨 CI: running with devel branch failed');
-            const issueBody = encodeURIComponent(`## CI Check Failed\n\n**PR:** #${context.issue.number}\n**Commit:** ${context.sha}\n**Branch:** ${context.payload.pull_request.head.ref}\n\nPlease investigate and fix the issue.`);
-            const createIssueUrl = `https://github.com/${context.repo.owner}/${context.repo.repo}/issues/new?title=${issueTitle}&body=${issueBody}`;
+            // Build issue URL with simple parameters
+            const baseUrl = `https://github.com/${context.repo.owner}/${context.repo.repo}/issues/new`;
+            const params = new URLSearchParams({
+              title: `CI: running with devel branch failed - PR #${context.issue.number}`,
+              body: `## CI Check Failed\n\nPR: #${context.issue.number}\nCommit: ${context.sha}\n\nPlease investigate.`
+            });
+            const createIssueUrl = `${baseUrl}?${params.toString()}`;
+
+            console.log('Issue URL:', createIssueUrl);
 
             await github.rest.checks.create({
               owner: context.repo.owner,
@@ -62,8 +68,8 @@ jobs:
               conclusion: 'action_required',
               output: {
                 title: 'CI: running with devel branch failed',
-                summary: `This check requires attention.\n\n**[👉 Click here to create an issue](${createIssueUrl})**`,
-                text: `**PR:** [#${context.issue.number}](${context.payload.pull_request.html_url})\n**Branch:** ${context.payload.pull_request.head.ref}`
+                summary: `This check requires attention.\n\n[Click here to create an issue](${createIssueUrl})`,
+                text: `PR: #${context.issue.number}\nBranch: ${context.payload.pull_request.head.ref}\n\nDirect link: ${createIssueUrl}`
               }
             });
 
