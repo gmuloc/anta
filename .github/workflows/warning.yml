@@ -25,22 +25,41 @@ jobs:
         run: |
           echo "::warning file=.github/workflows/warning.yml,line=1::This warning appears in check details"
 
-      # Option 6: Neutral Check Run (appears as distinct status in checks box)
-      - name: Create Warning Check Run
+      # Option 6a: Neutral Check Run (gray icon in checks box)
+      - name: Create Neutral Check Run
         uses: actions/github-script@v7
         with:
           script: |
             await github.rest.checks.create({
               owner: context.repo.owner,
               repo: context.repo.repo,
-              name: '⚠️ Warning Check',
+              name: '⚠️ Neutral Warning Check',
               head_sha: context.sha,
               status: 'completed',
               conclusion: 'neutral',
               output: {
-                title: 'Warning: Action may be required',
-                summary: 'This is a warning that appears in the PR checks box',
-                text: 'Detailed warning information goes here.'
+                title: 'Neutral: This is informational',
+                summary: 'This check has a **neutral** conclusion (gray icon)',
+                text: 'Neutral checks do not block merging.'
+              }
+            });
+
+      # Option 6b: Action Required Check Run (orange icon in checks box)
+      - name: Create Action Required Check Run
+        uses: actions/github-script@v7
+        with:
+          script: |
+            await github.rest.checks.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              name: '🟠 Action Required Check',
+              head_sha: context.sha,
+              status: 'completed',
+              conclusion: 'action_required',
+              output: {
+                title: 'Action Required: Please review',
+                summary: 'This check has an **action_required** conclusion (orange icon)',
+                text: 'Action required checks indicate something needs attention.'
               }
             });
 
