@@ -6,10 +6,15 @@ on:
     types:
       - opened
       - synchronize
+  check_run:
+    types:
+      - requested_action
 
 jobs:
+  # Job that runs on PR events
   warning:
     name: "Display Warning"
+    if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
@@ -44,7 +49,7 @@ jobs:
               }
             });
 
-      # Option 6b: Action Required Check Run (orange icon in checks box)
+      # Option 6b: Action Required Check Run with clickable action button
       - name: Create Action Required Check Run
         uses: actions/github-script@v7
         with:
@@ -57,23 +62,17 @@ jobs:
               status: 'completed',
               conclusion: 'action_required',
               output: {
-                title: 'Action Required: Please review',
-                summary: 'This check has an **action_required** conclusion (orange icon)',
-                text: 'Action required checks indicate something needs attention.'
-              }
-            });
-
-      # Option 7: Create an Issue
-      - name: Create Issue
-        uses: actions/github-script@v7
-        with:
-          script: |
-            await github.rest.issues.create({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              title: '🚨 This fails need to fix it',
-              body: `## CI Check Failed\n\nThis issue was automatically created by the PR Warning workflow.\n\n**PR:** #${context.issue.number}\n**SHA:** ${context.sha}\n\nPlease investigate and fix the issue.`,
-              labels: ['bug', 'ci']
+                title: 'CI: running with devel branch failed',
+                summary: 'This check failed. Click the button below to create an issue.',
+                text: `**PR:** [#${context.issue.number}](${context.payload.pull_request.html_url})\n**Branch:** ${context.payload.pull_request.head.ref}`
+              },
+              actions: [
+                {
+                  label: 'Create Issue',
+                  description: 'Create a GitHub issue for this failure',
+                  identifier: 'create_issue'
+                }
+              ]
             });
 
       # Option 2: PR Comment (appears in PR conversation)
@@ -121,3 +120,30 @@ jobs:
               startLine: 1
             });
 
+  # Job that runs when someone clicks the "Create Issue" button on the check
+  create_issue_on_action:
+    name: "Create Issue from Check Action"
+    if: github.event_name == 'check_run' && github.event.action == 'requested_action' && github.event.requested_action.identifier == 'create_issue'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Create Issue for Failed CI
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const checkRun = context.payload.check_run;
+
+            // Find the PR associated with this check run
+            let prInfo = '';
+            if (checkRun.pull_requests && checkRun.pull_requests.length > 0) {
+              const pr = checkRun.pull_requests[0];
+              prInfo = `**PR:** [#${pr.number}](https://github.com/${context.repo.owner}/${context.repo.repo}/pull/${pr.number})`;
+            }
+
+            await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: '🚨 CI: running with devel branch failed',
+              body: `## CI Check Failed\n\nThis issue was created because someone clicked "Create Issue" on a failed check.\n\n${prInfo}\n**Commit:** ${checkRun.head_sha}\n**Check:** ${checkRun.name}\n\nPlease investigate and fix the issue.`
+            });
+
+            core.info('Issue created successfully!');
