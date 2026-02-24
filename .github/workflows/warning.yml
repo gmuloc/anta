@@ -63,6 +63,19 @@ jobs:
               }
             });
 
+      # Option 7: Create an Issue
+      - name: Create Issue
+        uses: actions/github-script@v7
+        with:
+          script: |
+            await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: '🚨 This fails need to fix it',
+              body: `## CI Check Failed\n\nThis issue was automatically created by the PR Warning workflow.\n\n**PR:** #${context.issue.number}\n**SHA:** ${context.sha}\n\nPlease investigate and fix the issue.`,
+              labels: ['bug', 'ci']
+            });
+
       # Option 2: PR Comment (appears in PR conversation)
       - name: PR Comment Warning
         uses: actions/github-script@v7
