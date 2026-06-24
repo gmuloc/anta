@@ -3,5 +3,12 @@
     "version": "main",
     "title": "main",
     "aliases": []
+  },
+  {
+    "version": "v0.0.0-zensical-test",
+    "title": "v0.0.0-zensical-test",
+    "aliases": [
+      "stable"
+    ]
   }
 ]
