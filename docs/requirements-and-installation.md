@@ -55,6 +55,20 @@ Alternatively, pip install with `cli` extra is enough to install the ANTA CLI.
 pip install anta[cli]
 ```
 
+### Install ANTA MCP server
+
+The ANTA MCP server is an optional local server for MCP clients. Install it with the `mcp` extra:
+
+```bash
+pip install anta[mcp]
+```
+
+You can install both optional applications in the same environment:
+
+```bash
+pip install anta[cli,mcp]
+```
+
 ### Install ANTA from github
 
 ```bash

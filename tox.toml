@@ -29,7 +29,7 @@ python = """
 
 [env_run_base]
 description = "Run pytest with {basepython}"
-extras = ["cli"]
+extras = ["cli", "mcp"]
 dependency_groups = ["dev"]
 # posargs allows to run only a specific test using tox -e <env> -- path/to/my/test::test
 commands = [["pytest", { replace = "posargs", extend = true }]]
