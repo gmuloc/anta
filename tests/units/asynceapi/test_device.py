@@ -6,12 +6,13 @@
 from __future__ import annotations
 
 import asyncio
+from collections import Counter
 from typing import TYPE_CHECKING
 from unittest.mock import ANY, AsyncMock, patch
 
 import pytest
 import respx
-from httpx import ConnectError, HTTPStatusError, Response
+from httpx import ConnectError, HTTPStatusError, Request, Response
 
 from asynceapi import Device, EapiCommandError
 from asynceapi._constants import EapiCommandFormat
@@ -22,6 +23,7 @@ from .test_data import ERROR_EAPI_RESPONSE, JSONRPC_REQUEST_TEMPLATE, SUCCESS_EA
 _HOST = "192.0.2.1"
 _PASSWORD = "test1234"
 _SESSION_COOKIE = "aabbccdd11223344"
+_NEW_SESSION_COOKIE = "eeff001122334455"
 _BASE_URL = f"https://{_HOST}"
 
 
@@ -135,25 +137,135 @@ async def test_jsonrpc_exec_session_auth_concurrent_first_use_single_login() -> 
         assert all(call.request.headers.get("cookie") == f"Session={_SESSION_COOKIE}" for call in command_route.calls)
 
 
-async def test_jsonrpc_exec_session_auth_command_401_does_not_relogin() -> None:
-    """Test an expired session cookie raises and does not trigger a second login."""
+async def test_jsonrpc_exec_session_auth_command_401_reauthenticates_and_replays() -> None:
+    """Test an expired session cookie triggers one re-login and replays the failed request."""
     with respx.mock(assert_all_called=False) as respx_mock:
-        login_route = respx_mock.post(f"{_BASE_URL}/login").respond(status_code=200, headers={"Set-Cookie": f"Session={_SESSION_COOKIE}; Path=/"})
-        command_route = respx_mock.post(f"{_BASE_URL}/command-api").mock(side_effect=[Response(200, json=_jsonrpc_response()), Response(401)])
+        login_route = respx_mock.post(f"{_BASE_URL}/login").mock(
+            side_effect=[
+                Response(200, headers={"Set-Cookie": f"Session={_SESSION_COOKIE}; Path=/"}),
+                Response(200, headers={"Set-Cookie": f"Session={_NEW_SESSION_COOKIE}; Path=/"}),
+            ],
+        )
+        command_route = respx_mock.post(f"{_BASE_URL}/command-api").mock(
+            side_effect=[
+                Response(200, json=_jsonrpc_response()),
+                Response(401, text="Session expired"),
+                Response(200, json=_jsonrpc_response()),
+            ],
+        )
         logout_route = respx_mock.post(f"{_BASE_URL}/logout").respond(status_code=200)
 
         device = Device(host=_HOST, username="admin", password=_PASSWORD, use_session=True)
         try:
             await device.jsonrpc_exec(jsonrpc=_jsonrpc_request())
-            with pytest.raises(EapiAuthenticationError):
+            result = await device.jsonrpc_exec(jsonrpc=_jsonrpc_request())
+        finally:
+            await device.aclose()
+
+        assert result == [{"modelName": "pytest"}]
+        assert login_route.call_count == 2
+        assert command_route.call_count == 3
+        assert command_route.calls[1].request.headers.get("cookie") == f"Session={_SESSION_COOKIE}"
+        assert command_route.calls[2].request.headers.get("cookie") == f"Session={_NEW_SESSION_COOKIE}"
+        assert logout_route.call_count == 1
+
+
+async def test_jsonrpc_exec_session_auth_concurrent_stale_401_replays_without_login_storm() -> None:
+    """Test concurrent in-flight stale-cookie failures replay with one shared recovery login."""
+    stale_requests_seen = 0
+    all_stale_requests_sent = asyncio.Event()
+
+    async def command_side_effect(request: Request) -> Response:
+        nonlocal stale_requests_seen
+        cookie = request.headers.get("cookie")
+        if cookie == f"Session={_SESSION_COOKIE}":
+            stale_requests_seen += 1
+            if stale_requests_seen == 5:
+                all_stale_requests_sent.set()
+            await all_stale_requests_sent.wait()
+            return Response(401, text="Session expired")
+        if cookie == f"Session={_NEW_SESSION_COOKIE}":
+            return Response(200, json=_jsonrpc_response())
+        return Response(500, text=f"Unexpected cookie {cookie}")
+
+    with respx.mock(assert_all_called=False) as respx_mock:
+        login_route = respx_mock.post(f"{_BASE_URL}/login").respond(status_code=200, headers={"Set-Cookie": f"Session={_NEW_SESSION_COOKIE}; Path=/"})
+        command_route = respx_mock.post(f"{_BASE_URL}/command-api").mock(side_effect=command_side_effect)
+        logout_route = respx_mock.post(f"{_BASE_URL}/logout").respond(status_code=200)
+
+        device = Device(host=_HOST, username="admin", password=_PASSWORD, use_session=True)
+        assert device._session_auth is not None
+        device._session_auth.session_cookie = _SESSION_COOKIE
+        try:
+            results = await asyncio.gather(*(device.jsonrpc_exec(jsonrpc=_jsonrpc_request()) for _ in range(5)))
+        finally:
+            await device.aclose()
+
+        assert results == [[{"modelName": "pytest"}] for _ in range(5)]
+        assert login_route.call_count == 1
+        assert command_route.call_count == 10
+        assert Counter(call.request.headers.get("cookie") for call in command_route.calls) == Counter(
+            {f"Session={_SESSION_COOKIE}": 5, f"Session={_NEW_SESSION_COOKIE}": 5},
+        )
+        assert logout_route.call_count == 1
+
+
+async def test_jsonrpc_exec_session_auth_login_401_is_not_replayed() -> None:
+    """Test a login-phase 401 is not replayed as a recoverable session expiry."""
+    with respx.mock(assert_all_called=False) as respx_mock:
+        login_route = respx_mock.post(f"{_BASE_URL}/login").respond(status_code=401, text="Unauthorized")
+        command_route = respx_mock.post(f"{_BASE_URL}/command-api").respond(json=_jsonrpc_response())
+
+        device = Device(host=_HOST, username="admin", password=_PASSWORD, use_session=True)
+        try:
+            with pytest.raises(EapiAuthenticationError) as exc_info:
                 await device.jsonrpc_exec(jsonrpc=_jsonrpc_request())
         finally:
             await device.aclose()
 
+        assert exc_info.value.phase == "login"
         assert login_route.call_count == 1
-        assert command_route.call_count == 2
-        # The 401 clears session_cookie → logged_in is False → So logout() is a no-op
-        assert logout_route.call_count == 0
+        assert command_route.call_count == 0
+
+
+async def test_jsonrpc_exec_session_auth_recovery_login_failure_is_cached() -> None:
+    """Test a failed recovery login makes later requests fail fast for this client."""
+    with respx.mock(assert_all_called=False) as respx_mock:
+        login_route = respx_mock.post(f"{_BASE_URL}/login").respond(status_code=401, text="Unauthorized")
+        command_route = respx_mock.post(f"{_BASE_URL}/command-api").respond(status_code=401, text="Session expired")
+
+        device = Device(host=_HOST, username="admin", password=_PASSWORD, use_session=True)
+        assert device._session_auth is not None
+        device._session_auth.session_cookie = _SESSION_COOKIE
+        try:
+            with pytest.raises(EapiAuthenticationError) as first_exc:
+                await device.jsonrpc_exec(jsonrpc=_jsonrpc_request())
+            with pytest.raises(EapiAuthenticationError) as second_exc:
+                await device.jsonrpc_exec(jsonrpc=_jsonrpc_request())
+        finally:
+            await device.aclose()
+
+        assert first_exc.value.phase == "login"
+        assert second_exc.value is first_exc.value
+        assert login_route.call_count == 1
+        assert command_route.call_count == 1
+
+
+async def test_jsonrpc_exec_non_session_auth_401_is_not_replayed() -> None:
+    """Test a non-session-auth 401 keeps the normal HTTPStatusError behavior."""
+    with respx.mock(assert_all_called=False) as respx_mock:
+        login_route = respx_mock.post(f"{_BASE_URL}/login").respond(status_code=200, headers={"Set-Cookie": f"Session={_SESSION_COOKIE}; Path=/"})
+        command_route = respx_mock.post(f"{_BASE_URL}/command-api").respond(status_code=401, text="Unauthorized")
+
+        device = Device(host=_HOST, username="admin", password=_PASSWORD, use_session=False)
+        try:
+            with pytest.raises(HTTPStatusError):
+                await device.jsonrpc_exec(jsonrpc=_jsonrpc_request())
+        finally:
+            await device.aclose()
+
+        assert login_route.call_count == 0
+        assert command_route.call_count == 1
 
 
 async def test_aclose_calls_logout_when_session_enabled() -> None:

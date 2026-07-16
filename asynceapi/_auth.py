@@ -72,7 +72,7 @@ class EapiSessionAuth(httpx.Auth):
                         await login_response.aread()
                         LOGGER.debug("Login for %s returned %s: %s", self._host, login_response.status_code, login_response.text.strip())
                         if login_response.status_code == HTTPStatus.UNAUTHORIZED:
-                            raise EapiAuthenticationError(self._host)
+                            raise EapiAuthenticationError(self._host, phase="login")
                         login_response.raise_for_status()
 
                     # Extract session cookie
@@ -85,11 +85,13 @@ class EapiSessionAuth(httpx.Auth):
                     self.session_cookie = cookie
 
         # Attach session cookie and dispatch the real request
-        request.headers["Cookie"] = f"Session={self.session_cookie}"
+        request_cookie = self.session_cookie
+        request.headers["Cookie"] = f"Session={request_cookie}"
         response = yield request
 
         if response.status_code == HTTPStatus.UNAUTHORIZED:
             await response.aread()
-            self.session_cookie = None  # clear before raising so re-login is possible on next call
+            if self.session_cookie == request_cookie:
+                self.session_cookie = None  # clear before raising so re-login is possible on next call
             LOGGER.debug("Response for %s returned %s (session likely expired): %s", self._host, response.status_code, response.text.strip())
-            raise EapiAuthenticationError(self._host)
+            raise EapiAuthenticationError(self._host, phase="command")

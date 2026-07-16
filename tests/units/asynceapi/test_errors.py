@@ -15,6 +15,7 @@ def test_eapi_authentication_error_host_and_message() -> None:
     """Test that EapiAuthenticationError stores host and includes it with HTTP 401 context in the message."""
     exc = EapiAuthenticationError("192.0.2.1")
     assert exc.host == "192.0.2.1"
+    assert exc.phase is None
     message = str(exc)
     assert "192.0.2.1" in message
     assert "HTTP 401" in message

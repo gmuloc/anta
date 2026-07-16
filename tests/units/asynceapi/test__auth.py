@@ -22,6 +22,7 @@ _LOGIN_URL = f"https://{_HOST}:443/login"
 _COMMAND_URL = f"https://{_HOST}:443/command-api"
 
 _SESSION_COOKIE = "aabbccdd11223344"
+_NEW_SESSION_COOKIE = "eeff001122334455"
 
 
 @pytest.fixture(name="session_auth")
@@ -147,8 +148,11 @@ async def test_auth_flow_login_failure_raises(
     gen = session_auth.async_auth_flow(request=httpx.Request("POST", _COMMAND_URL))
     login_req = await anext(gen)
 
-    with pytest.raises(expected_exc):
+    with pytest.raises(expected_exc) as exc_info:
         await gen.asend(httpx.Response(status_code, request=login_req))
+    if status_code == 401:
+        assert isinstance(exc_info.value, EapiAuthenticationError)
+        assert exc_info.value.phase == "login"
     assert session_auth.logged_in is False
     assert session_auth.session_cookie is None
 
@@ -160,11 +164,30 @@ async def test_auth_flow_401_raises(session_auth: EapiSessionAuth) -> None:
     gen = session_auth.async_auth_flow(request=httpx.Request("POST", _COMMAND_URL))
     cmd_req = await anext(gen)
 
-    with pytest.raises(EapiAuthenticationError):
+    with pytest.raises(EapiAuthenticationError) as exc_info:
         await gen.asend(httpx.Response(401, request=cmd_req))
 
+    assert exc_info.value.phase == "command"
     assert session_auth.logged_in is False
     assert session_auth.session_cookie is None
+
+
+async def test_auth_flow_stale_401_does_not_clear_newer_cookie(session_auth: EapiSessionAuth) -> None:
+    """Test that a stale 401 only clears the cookie that was attached to its request."""
+    session_auth.session_cookie = _SESSION_COOKIE
+
+    gen = session_auth.async_auth_flow(request=httpx.Request("POST", _COMMAND_URL))
+    cmd_req = await anext(gen)
+    assert cmd_req.headers.get("Cookie") == f"Session={_SESSION_COOKIE}"
+
+    session_auth.session_cookie = _NEW_SESSION_COOKIE
+
+    with pytest.raises(EapiAuthenticationError) as exc_info:
+        await gen.asend(httpx.Response(401, request=cmd_req))
+
+    assert exc_info.value.phase == "command"
+    assert session_auth.logged_in is True
+    assert session_auth.session_cookie == _NEW_SESSION_COOKIE
 
 
 async def test_auth_flow_login_failure_logs_debug(session_auth: EapiSessionAuth) -> None:

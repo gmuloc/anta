@@ -9,6 +9,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from logging import getLogger
 from socket import getservbyname
 from typing import TYPE_CHECKING, Any, Literal, overload
@@ -27,7 +28,7 @@ from ._auth import EapiSessionAuth
 from ._constants import EapiCommandFormat
 from .aio_portcheck import port_check_url
 from .config_session import SessionConfig
-from .errors import EapiCommandError
+from .errors import EapiAuthenticationError, EapiCommandError
 
 if TYPE_CHECKING:
     from types import TracebackType
@@ -113,6 +114,8 @@ class Device(httpx.AsyncClient):
         self.host = host
         self._use_session = use_session
         self._session_auth: EapiSessionAuth | None = None
+        self._session_recovery_lock = asyncio.Lock()
+        self._session_recovery_failure: EapiAuthenticationError | None = None
         kwargs.setdefault("base_url", httpx.URL(f"{proto}://{self.host}:{self.port}"))
         kwargs.setdefault("verify", False)
         if self._use_session:
@@ -456,9 +459,15 @@ class Device(httpx.AsyncClient):
             The list of command results; either dict or text depending on the
             JSON-RPC format parameter.
         """
-        res = await self.post(self.EAPI_COMMAND_API_URL, json=jsonrpc)
-        res.raise_for_status()
-        body = res.json()
+        if self._use_session and self._session_recovery_failure is not None:
+            raise self._session_recovery_failure
+
+        try:
+            body = await self._jsonrpc_exec_request(jsonrpc)
+        except EapiAuthenticationError as exc:
+            if not self._should_replay_session_auth_error(exc):
+                raise
+            body = await self._replay_jsonrpc_after_session_auth_error(jsonrpc=jsonrpc, auth_error=exc)
 
         commands = jsonrpc["params"]["cmds"]
         ofmt = jsonrpc["params"].get("format", EapiCommandFormat.JSON)
@@ -499,6 +508,31 @@ class Device(httpx.AsyncClient):
             errmsg=err_msg,
             not_exec=commands[err_at + 1 :],
         )
+
+    async def _jsonrpc_exec_request(self, jsonrpc: JsonRpc) -> dict[str, Any]:
+        """Send one JSON-RPC request and return the decoded response body."""
+        res = await self.post(self.EAPI_COMMAND_API_URL, json=jsonrpc)
+        res.raise_for_status()
+        return res.json()
+
+    def _should_replay_session_auth_error(self, exc: EapiAuthenticationError) -> bool:
+        """Return whether an authentication error is eligible for one session-auth replay."""
+        return self._use_session and exc.phase == "command"
+
+    async def _replay_jsonrpc_after_session_auth_error(self, *, jsonrpc: JsonRpc, auth_error: EapiAuthenticationError) -> dict[str, Any]:
+        """Replay one JSON-RPC request after a command-phase session-auth failure."""
+        async with self._session_recovery_lock:
+            if self._session_recovery_failure is not None:
+                raise self._session_recovery_failure from auth_error
+
+            try:
+                body = await self._jsonrpc_exec_request(jsonrpc)
+            except EapiAuthenticationError as exc:
+                if exc.phase == "login":
+                    self._session_recovery_failure = exc
+                raise
+            else:
+                return body
 
     async def logout(self) -> None:
         """Log out of the device session and reset local state. No-op if not logged in."""

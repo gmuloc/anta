@@ -6,7 +6,7 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Literal
 
 import httpx
 
@@ -54,9 +54,10 @@ EapiTransportError = httpx.HTTPStatusError
 class EapiAuthenticationError(RuntimeError):
     """Exception raised when the device returns HTTP 401 — either on login or on a command request."""
 
-    def __init__(self, host: str) -> None:
+    def __init__(self, host: str, *, phase: Literal["login", "command"] | None = None) -> None:
         super().__init__(f"Authentication failed for {host!r} (HTTP 401).")
         self.host = host
+        self.phase = phase
 
 
 class EapiAsyncOnlyError(RuntimeError):
