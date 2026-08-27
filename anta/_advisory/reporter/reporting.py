@@ -76,12 +76,11 @@ class SecurityAdvisoryReport:
     """Validated, grouped security advisory results ready for report generation."""
 
     groups: list[AdvisoryResultGroup]
-    source: ResultManager = field(repr=False, compare=False)
 
     @classmethod
     def from_result_manager(cls, manager: ResultManager) -> SecurityAdvisoryReport:
         """Build a report model from a result manager."""
-        return cls(groups=group_advisory_results(manager.results), source=manager)
+        return cls(groups=group_advisory_results(manager.results))
 
 
 def generate_security_advisory_md_report(report: SecurityAdvisoryReport, md_filename: Path) -> None:

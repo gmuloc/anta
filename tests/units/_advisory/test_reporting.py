@@ -44,7 +44,6 @@ def test_security_advisory_report_from_result_manager() -> None:
     assert len(report.groups) == 1
     assert report.groups[0].advisory is ADVISORY
     assert report.groups[0].results == [result]
-    assert report.source is manager
 
 
 def test_validate_advisory_results_rejects_empty_results() -> None:

@@ -9,11 +9,18 @@ from pathlib import Path
 
 import pytest
 
+from anta._advisory.reporter.md_reporter import SecurityAdvisoryMDReportBase
 from anta._advisory.reporter.reporting import SecurityAdvisoryReport, generate_security_advisory_md_report
+from anta.reporter.md_reporter import MDReportBase
 from anta.result_manager import ResultManager
 from anta.result_manager.models import AntaTestStatus
 from tests.units._advisory.conftest import ADVISORY
 from tests.units._advisory.reporting_data import build_security_advisory_result, build_security_advisory_result_manager
+
+
+def test_security_advisory_markdown_base_is_not_result_manager_report() -> None:
+    """Verify advisory sections do not narrow the MDReportBase data contract."""
+    assert not issubclass(SecurityAdvisoryMDReportBase, MDReportBase)
 
 
 def test_security_advisory_markdown_report(tmp_path: Path) -> None:
@@ -68,3 +75,12 @@ def test_security_advisory_markdown_optional_content(tmp_path: Path) -> None:
     assert "- **Workaround:** Apply the temporary workaround." in content
     assert "[Reference]" not in content
     assert "*No resolutions are published for this advisory.*" in content
+
+
+def test_security_advisory_markdown_report_os_error(tmp_path: Path) -> None:
+    """Verify file-system errors are propagated when writing the report."""
+    report = SecurityAdvisoryReport.from_result_manager(build_security_advisory_result_manager())
+    output = tmp_path / "missing" / "advisories.md"
+
+    with pytest.raises(OSError, match="No such file or directory"):
+        generate_security_advisory_md_report(report, output)

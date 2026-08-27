@@ -49,30 +49,23 @@ STATUS_MAP = {
 """Mapping of `AntaTestStatus` to their string representation with icons and non-breaking spaces for Markdown."""
 
 
-class MDReportBase(ABC):
-    """Base class for all sections subclasses.
-
-    Every subclasses must implement the `generate_section` method that uses the `ResultManager` object
-    to generate and write content to the provided markdown file.
-    """
+class _MDReportSectionBase(ABC):
+    """Internal base class for Markdown report sections."""
 
     ICON: str = ""
     """Optional icon to prepend to the section header."""
 
-    def __init__(self, mdfile: TextIO, results: ResultManager, extra_data: dict[str, Any] | None = None) -> None:
-        """Initialize the MDReportBase with an open markdown file object to write to and a ResultManager instance.
+    def __init__(self, mdfile: TextIO, extra_data: dict[str, Any] | None = None) -> None:
+        """Initialize a Markdown report section.
 
         Parameters
         ----------
         mdfile
             An open file object to write the markdown data into.
-        results
-            The ResultsManager instance containing all test results.
         extra_data
             Optional extra data dictionary. Can be used by subclasses to render additional data.
         """
         self.mdfile = mdfile
-        self.results = results
         self.extra_data = extra_data
 
     @abstractmethod
@@ -320,6 +313,29 @@ class MDReportBase(ABC):
         header_row = f"| {' | '.join(columns)} |"
         alignment_row = f"| {' | '.join([align] * len(columns))} |"
         return [header_row, alignment_row]
+
+
+class MDReportBase(_MDReportSectionBase):
+    """Base class for Markdown report sections backed by a `ResultManager`.
+
+    Every subclass must implement the `generate_section` method that uses the `ResultManager` object
+    to generate and write content to the provided Markdown file.
+    """
+
+    def __init__(self, mdfile: TextIO, results: ResultManager, extra_data: dict[str, Any] | None = None) -> None:
+        """Initialize the MDReportBase with an open Markdown file object and a ResultManager instance.
+
+        Parameters
+        ----------
+        mdfile
+            An open file object to write the Markdown data into.
+        results
+            The ResultManager instance containing all test results.
+        extra_data
+            Optional extra data dictionary. Can be used by subclasses to render additional data.
+        """
+        super().__init__(mdfile, extra_data)
+        self.results = results
 
 
 class ANTAReport(MDReportBase):

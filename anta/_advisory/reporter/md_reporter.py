@@ -8,7 +8,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any, ClassVar
 
 from anta._advisory.models import AdvisoryMetadata, AdvisoryMitigation, AdvisoryResolution, AdvisorySeverity
-from anta.reporter.md_reporter import MDReportBase
+from anta.reporter.md_reporter import _MDReportSectionBase
 from anta.result_manager.models import AntaTestStatus
 
 if TYPE_CHECKING:
@@ -27,14 +27,14 @@ SEVERITY_ICONS = {
 """Icons used to distinguish advisory severity without relying on color alone."""
 
 
-class SecurityAdvisoryMDReportBase(MDReportBase):
+class SecurityAdvisoryMDReportBase(_MDReportSectionBase):
     """Base class for security advisory markdown report sections."""
 
     def __init__(self, mdfile: TextIO, report: SecurityAdvisoryReport, extra_data: dict[str, Any] | None = None) -> None:
         """Initialize a section with pre-validated advisory report data."""
+        super().__init__(mdfile, extra_data)
         self.report = report
         self.groups = report.groups
-        super().__init__(mdfile, report.source, extra_data)
 
 
 class ANTASecurityAdvisoryReport(SecurityAdvisoryMDReportBase):
@@ -67,7 +67,7 @@ class AdvisoryExposureSummary(SecurityAdvisoryMDReportBase):
         "❗&nbsp;Error",
         "⏭️&nbsp;Skipped",
     ]
-    TABLE_HEADING: ClassVar[list[str]] = MDReportBase.generate_table_heading(columns=_TABLE_COLUMNS)
+    TABLE_HEADING: ClassVar[list[str]] = SecurityAdvisoryMDReportBase.generate_table_heading(columns=_TABLE_COLUMNS)
 
     @staticmethod
     def _count(group: AdvisoryResultGroup, status: AntaTestStatus) -> int:
