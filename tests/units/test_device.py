@@ -18,6 +18,7 @@ from asyncssh import SSHClientConnection, SSHClientConnectionOptions
 from httpx import ConnectError, ConnectTimeout, HTTPError, TimeoutException
 from rich import print as rprint
 
+from anta._eos.version import EOSVersion
 from anta.device import AntaDevice, AntaDeviceCapabilities, AsyncEOSDevice
 from anta.models import AntaCommand
 from asynceapi import EapiCommandError
@@ -458,8 +459,29 @@ REFRESH_PARAMS: list[ParameterSet] = [
                 ]
             },
         ),
-        {"is_online": True, "established": True, "hw_model": "DCS-7280CR3-32P4-F"},
+        {
+            "is_online": True,
+            "established": True,
+            "hw_model": "DCS-7280CR3-32P4-F",
+            "eos_version": EOSVersion(major=4, minor=31, patch=1, suffix="F-34361447.fraserrel (engineering build)"),
+        },
         id="established",
+    ),
+    pytest.param(
+        {},
+        (
+            {"return_value": True},
+            {
+                "return_value": [
+                    {
+                        "modelName": "DCS-7280CR3-32P4-F",
+                        "version": "invalid",
+                    }
+                ]
+            },
+        ),
+        {"is_online": True, "established": True, "hw_model": "DCS-7280CR3-32P4-F", "eos_version": None},
+        id="invalid EOS version",
     ),
     pytest.param(
         {},
@@ -507,7 +529,12 @@ REFRESH_PARAMS: list[ParameterSet] = [
                 ]
             },
         ),
-        {"is_online": True, "established": False, "hw_model": None},
+        {
+            "is_online": True,
+            "established": False,
+            "hw_model": None,
+            "eos_version": EOSVersion(major=4, minor=31, patch=1, suffix="F-34361447.fraserrel (engineering build)"),
+        },
         id="cannot parse command",
     ),
     pytest.param(
@@ -662,6 +689,7 @@ class TestAsyncEOSDevice:
 
             assert expected is not None
             assert dev.name == expected["name"]
+            assert dev.eos_version is None
             if device.get("disable_cache") is True:
                 assert dev.cache is None
                 assert dev.cache_locks is None
@@ -735,6 +763,7 @@ class TestAsyncEOSDevice:
             assert async_device.is_online == expected["is_online"]
             assert async_device.established == expected["established"]
             assert async_device.hw_model == expected["hw_model"]
+            assert async_device.eos_version == expected.get("eos_version")
 
     async def test_refresh_timeout_without_message_in_exception(self, async_device: AsyncEOSDevice, caplog: pytest.LogCaptureFixture) -> None:
         """Test when a timeout occurs in AsyncEOSDevice.refresh() without a message in the HTTPX exception."""

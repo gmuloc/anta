@@ -67,6 +67,7 @@ classDiagram
     class AsyncEOSDevice {
       capabilities : AntaDeviceCapabilities$
       enable : bool
+      eos_version : EOSVersion | None
       max_connections : int | None
       use_session_auth : bool
       _client : asynceapi.Device

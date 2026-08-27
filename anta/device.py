@@ -20,6 +20,7 @@ from httpx import ConnectError, HTTPError, TimeoutException
 
 import asynceapi
 from anta import __DEBUG__
+from anta._eos.version import EOSVersion, parse_eos_version
 from anta.logger import anta_log_exception, exc_to_str
 from anta.models import AntaCommand
 from anta.settings import get_httpx_settings
@@ -360,6 +361,8 @@ class AsyncEOSDevice(AntaDevice):
         True if remote command execution succeeds.
     hw_model : str
         Hardware model of the device.
+    eos_version : EOSVersion | None
+        Parsed EOS version of the device, if available.
     tags : set[str]
         Tags for this device.
     enable : bool
@@ -441,6 +444,7 @@ class AsyncEOSDevice(AntaDevice):
         if name is None:
             name = f"{host}{f':{port}' if port else ''}"
         super().__init__(name, tags, disable_cache=disable_cache)
+        self.eos_version: EOSVersion | None = None
         if username is None:
             message = f"'username' is required to instantiate device '{self.name}'"
             logger.error(message)
@@ -482,6 +486,7 @@ class AsyncEOSDevice(AntaDevice):
         https://rich.readthedocs.io/en/stable/pretty.html#rich-repr-protocol.
         """
         yield from super().__rich_repr__()
+        yield ("eos_version", self.eos_version)
         yield ("host", self._client.host)
         yield ("eapi_port", self._client.port)
         yield ("username", self._ssh_opts.username)
@@ -510,6 +515,7 @@ class AsyncEOSDevice(AntaDevice):
             f"AsyncEOSDevice({self.name!r}, "
             f"tags={self.tags!r}, "
             f"hw_model={self.hw_model!r}, "
+            f"eos_version={self.eos_version!r}, "
             f"is_online={self.is_online!r}, "
             f"established={self.established!r}, "
             f"disable_cache={self.cache is None!r}, "
@@ -665,6 +671,7 @@ class AsyncEOSDevice(AntaDevice):
         - `is_online`: True when the eAPI HTTP endpoint responds successfully.
         - `established`: True when a command execution succeeds.
         - `hw_model`: Hardware model parsed from `show version`.
+        - `eos_version`: EOS version parsed from `show version`, or `None` when unavailable or invalid.
         """
         logger.debug("Refreshing device %s", self.name)
         if self._client.is_closed:
@@ -685,7 +692,12 @@ class AsyncEOSDevice(AntaDevice):
             logger.warning("Cannot get hardware information from device %s", self.name)
             return
 
-        self.hw_model = show_version.json_output.get("modelName", None)
+        show_version_output = show_version.json_output
+        self.hw_model = show_version_output.get("modelName", None)
+        version = show_version_output.get("version")
+        self.eos_version = parse_eos_version(version) if isinstance(version, str) else None
+        if version is not None and self.eos_version is None:
+            logger.warning("Cannot parse EOS version %r returned by device %s", version, self.name)
         if self.hw_model is None:
             self.established = False
             logger.critical("Cannot parse 'show version' returned by device %s", self.name)
