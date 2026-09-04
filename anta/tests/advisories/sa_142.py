@@ -6,7 +6,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, ClassVar
+from typing import TYPE_CHECKING, Any, ClassVar, cast
 
 from anta._advisory.base import _AntaAdvisoryTest
 from anta._advisory.eos_versions import (
@@ -59,10 +59,14 @@ from anta._advisory.models import (
 )
 from anta._advisory.optional_commands import OptionalCommandsMixin
 from anta._advisory.remediation import (
+    ApplyConfiguration,
     FixedRelease,
-    upgrade_remediation,
+    RemediationPlan,
+    Sequence,
+    upgrade_action,
 )
 from anta._eos.platform import PlatformFamily, PlatformIdentity, platform_matches_families
+from anta._eos.version import EOSVersion
 from anta.decorators import preview_test_class
 
 if TYPE_CHECKING:
@@ -75,11 +79,11 @@ REDIRECT_VERSION_MATRIX: tuple[VersionRule, ...] = tuple(VersionRule(major=4, mi
 SEGMENT_SECURITY_VERSION_MATRIX: tuple[VersionRule, ...] = tuple(VersionRule(major=4, minor=minor) for minor in range(32, 36))
 
 FIXED_RELEASES = (
-    FixedRelease("4.36.1F", "4.36"),
-    FixedRelease("4.35.4M", "4.35"),
-    FixedRelease("4.34.6M", "4.34"),
-    FixedRelease("4.33.8M", "4.33"),
-    FixedRelease("4.32.11M", "4.32"),
+    FixedRelease(EOSVersion(4, 36, 1, suffix="F")),
+    FixedRelease(EOSVersion(4, 35, 4, suffix="M")),
+    FixedRelease(EOSVersion(4, 34, 6, suffix="M")),
+    FixedRelease(EOSVersion(4, 33, 8, suffix="M")),
+    FixedRelease(EOSVersion(4, 32, 11, suffix="M")),
 )
 
 
@@ -271,15 +275,6 @@ def _path_applies(
     return AffectedStatus.NOT_AFFECTED, False, str(platform)
 
 
-def _resolution_remediation(*, inconclusive: bool = False) -> str:
-    """Return the advisory's upgrade plus required post-upgrade action."""
-    return upgrade_remediation(
-        FIXED_RELEASES,
-        inconclusive=inconclusive,
-        additional_action=("Apply the required post-upgrade remediation described in the advisory."),
-    )
-
-
 # pylint: disable-next=too-many-branches
 def _assess_sa142(  # noqa: C901, PLR0911, PLR0912, PLR0915
     path_facts: tuple[Fact[ConfigurationValue], ...],
@@ -338,6 +333,8 @@ def _assess_sa142(  # noqa: C901, PLR0911, PLR0912, PLR0915
             context.append(platform_context)
 
     if confirmed:
+        current_version = cast("EOSVersion", cast("AvailableFact[DeviceVersion]", version).value)
+        remediation = RemediationPlan(Sequence((upgrade_action(FIXED_RELEASES, current_version=current_version), ApplyConfiguration((MTU_DROP_COMMAND,)))))
         if isinstance(mitigation, UnavailableFact):
             return ErrorResult(vulnerability_id=vulnerability_id, problems=(mitigation,))
         if mitigation.value.state is MitigationState.EFFECTIVE:
@@ -345,13 +342,13 @@ def _assess_sa142(  # noqa: C901, PLR0911, PLR0912, PLR0915
                 vulnerability_id=vulnerability_id,
                 context=tuple(context),
                 mitigated_conditions=tuple(MitigatedCondition(path, (mitigation,)) for path in confirmed),
-                remediation=_resolution_remediation(),
+                remediation=remediation,
             )
         return AffectedResult(
             vulnerability_id=vulnerability_id,
             context=tuple(context),
             conditions=tuple(confirmed),
-            remediation=_resolution_remediation(),
+            remediation=remediation,
         )
     if problems:
         return ErrorResult(vulnerability_id=vulnerability_id, problems=tuple(dict.fromkeys(problems)))
@@ -359,11 +356,13 @@ def _assess_sa142(  # noqa: C901, PLR0911, PLR0912, PLR0915
         if isinstance(mitigation, UnavailableFact):
             return ErrorResult(vulnerability_id=vulnerability_id, problems=(mitigation,))
         indications: tuple[FindingEvidence, ...] = (*conservative, mitigation)
+        current_version = cast("EOSVersion", cast("AvailableFact[DeviceVersion]", version).value)
+        remediation = RemediationPlan(Sequence((upgrade_action(FIXED_RELEASES, current_version=current_version), ApplyConfiguration((MTU_DROP_COMMAND,)))))
         return InconclusiveResult(
             vulnerability_id=vulnerability_id,
             indications=indications,
             unresolved=(Unobservable(UnobservableKind.INCOMPLETE_PLATFORM_IDENTITY, "modular switch generation"),),
-            remediation=_resolution_remediation(inconclusive=True),
+            remediation=remediation,
         )
     return NotAffectedResult(vulnerability_id=vulnerability_id, decisive=tuple(decisive))
 
