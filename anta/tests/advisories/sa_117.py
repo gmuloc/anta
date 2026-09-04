@@ -6,7 +6,7 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, ClassVar, cast
+from typing import Any, ClassVar
 
 from anta._advisory.base import _AntaAdvisoryTest
 from anta._advisory.eos_versions import AffectedStatus, VersionRule, evaluate_version
@@ -36,9 +36,6 @@ from anta._advisory.remediation import (
 )
 from anta._eos.version import EOSVersion
 from anta.decorators import preview_test_class
-
-if TYPE_CHECKING:
-    from anta.device import DeviceVersion
 
 AFFECTED_VERSION_MATRIX: tuple[VersionRule, ...] = (
     VersionRule(major=4, minor=30, patch_gte=1, patch_lt=10),
@@ -76,7 +73,7 @@ ADVISORY = _AdvisoryMetadata(
 
 # pylint: disable-next=too-many-return-statements
 def _assess_sa117(  # noqa: PLR0911
-    version: Fact[DeviceVersion],
+    version: Fact[EOSVersion],
     gnmi: Fact[FeatureValue],
     accounting: Fact[FeatureValue],
     trace: Fact[ConfigurationValue],
@@ -100,7 +97,7 @@ def _assess_sa117(  # noqa: PLR0911
         return NotAffectedResult(vulnerability_id=vulnerability_id, decisive=(gnmi,))
 
     release = EosReleaseAssessment(version, VersionRelation.AFFECTED)
-    remediation = upgrade_plan(FIXED_RELEASES, current_version=cast("EOSVersion", version.value))
+    remediation = upgrade_plan(FIXED_RELEASES, current_version=version.value)
     if not isinstance(accounting, UnavailableFact) and accounting.value.state is FeatureState.ENABLED:
         # TODO(sa117): Resolve the gNOI File and effective gNSI Authz controls.  # NOSONAR
         return InconclusiveResult(

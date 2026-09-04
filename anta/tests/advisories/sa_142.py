@@ -6,7 +6,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, ClassVar, cast
+from typing import Any, ClassVar
 
 from anta._advisory.base import _AntaAdvisoryTest
 from anta._advisory.eos_versions import (
@@ -68,9 +68,6 @@ from anta._advisory.remediation import (
 from anta._eos.platform import PlatformFamily, PlatformIdentity, platform_matches_families
 from anta._eos.version import EOSVersion
 from anta.decorators import preview_test_class
-
-if TYPE_CHECKING:
-    from anta.device import DeviceVersion
 
 MTU_DROP_COMMAND = "ip software forwarding mtu exceed action drop"
 MTU_DROP_SHOW_COMMAND = f"show running-config | include ^{MTU_DROP_COMMAND}$"
@@ -257,7 +254,7 @@ ADVISORY = _AdvisoryMetadata(
 
 def _path_applies(
     path: ExposurePath,
-    device_version: DeviceVersion | None,
+    device_version: EOSVersion | None,
     platform: PlatformIdentity | None,
 ) -> tuple[AffectedStatus, bool, str | None]:
     """Evaluate a configured path's documented EOS train and platform scope."""
@@ -275,10 +272,18 @@ def _path_applies(
     return AffectedStatus.NOT_AFFECTED, False, str(platform)
 
 
+def _require_eos_version(fact: Fact[EOSVersion]) -> EOSVersion:
+    """Return an available EOS version after validating the assessment invariant."""
+    if isinstance(fact, UnavailableFact):
+        msg = "An assessed exposure path requires an available EOS version"
+        raise TypeError(msg)
+    return fact.value
+
+
 # pylint: disable-next=too-many-branches
 def _assess_sa142(  # noqa: C901, PLR0911, PLR0912, PLR0915
     path_facts: tuple[Fact[ConfigurationValue], ...],
-    version: Fact[DeviceVersion],
+    version: Fact[EOSVersion],
     platform: Fact[PlatformIdentity],
     mitigation: Fact[MitigationValue],
 ) -> VulnerabilityResult:
@@ -333,7 +338,7 @@ def _assess_sa142(  # noqa: C901, PLR0911, PLR0912, PLR0915
             context.append(platform_context)
 
     if confirmed:
-        current_version = cast("EOSVersion", cast("AvailableFact[DeviceVersion]", version).value)
+        current_version = _require_eos_version(version)
         remediation = RemediationPlan(Sequence((upgrade_action(FIXED_RELEASES, current_version=current_version), ApplyConfiguration((MTU_DROP_COMMAND,)))))
         if isinstance(mitigation, UnavailableFact):
             return ErrorResult(vulnerability_id=vulnerability_id, problems=(mitigation,))
@@ -356,7 +361,7 @@ def _assess_sa142(  # noqa: C901, PLR0911, PLR0912, PLR0915
         if isinstance(mitigation, UnavailableFact):
             return ErrorResult(vulnerability_id=vulnerability_id, problems=(mitigation,))
         indications: tuple[FindingEvidence, ...] = (*conservative, mitigation)
-        current_version = cast("EOSVersion", cast("AvailableFact[DeviceVersion]", version).value)
+        current_version = _require_eos_version(version)
         remediation = RemediationPlan(Sequence((upgrade_action(FIXED_RELEASES, current_version=current_version), ApplyConfiguration((MTU_DROP_COMMAND,)))))
         return InconclusiveResult(
             vulnerability_id=vulnerability_id,

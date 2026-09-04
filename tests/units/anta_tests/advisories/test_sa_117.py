@@ -61,7 +61,6 @@ EXPECTED_4_33_REMEDIATION = upgrade_plan(
 if TYPE_CHECKING:
     from collections.abc import Mapping
 
-    from anta.device import DeviceVersion
     from anta.models import AntaCommand
     from tests.units.anta_tests import AntaUnitTestData
 
@@ -313,15 +312,15 @@ class TestSA117Assessment(unittest.TestCase):
     def assess(
         self,
         *,
-        version: object = "4.32.4M",
+        version: str | None = "4.32.4M",
         gnmi: Mapping[str, object] | None = None,
         trace: bool | None = False,
     ) -> VulnerabilityResult:
         """Run the pure assessment helper with concise defaults."""
         output = {"transports": {"default": {"enabled": True, "accounting": False}}} if gnmi is None else gnmi
-        device_version = parse_eos_version(version) if isinstance(version, str) else cast("DeviceVersion | None", version)
+        device_version = parse_eos_version(version) if version is not None else None
         source = FactSource("unit test", FactSourceKind.DEVICE_METADATA)
-        version_fact: Fact[DeviceVersion] = (
+        version_fact: Fact[EOSVersion] = (
             EosVersionFact.available(device_version, source) if device_version is not None else EosVersionFact.unavailable(FactProblemKind.MISSING, source)
         )
         gnmi_command = _command(GnmiTransportFact.commands[0], dict(output))
@@ -364,24 +363,6 @@ class TestSA117Assessment(unittest.TestCase):
         for case in cases:
             with self.subTest(case=case):
                 assert isinstance(self.assess(**case), ErrorResult)
-
-    def test_invalid_available_version_is_error(self) -> None:
-        """Reject available device-version metadata that cannot be parsed as EOS."""
-
-        class InvalidDeviceVersion:
-            """Device-version metadata with a deliberately invalid EOS representation."""
-
-            def __str__(self) -> str:
-                return "not-an-eos-version"
-
-            def to_dict(self) -> dict[str, str | int]:
-                return {}
-
-        finding = self.assess(version=InvalidDeviceVersion())
-
-        assert isinstance(finding, ErrorResult)
-        assert finding.problems[0].definition is EosVersionFact
-        assert finding.problems[0].problem is FactProblemKind.INVALID
 
     def test_true_or_branch_overrides_unknown_other_branch(self) -> None:
         accounting = self.assess(gnmi={"transports": {"default": {"enabled": True, "accounting": True}}}, trace=None)

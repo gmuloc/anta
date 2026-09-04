@@ -18,26 +18,28 @@ from anta._advisory.facts.models import (
     FeatureState,
     FeatureValue,
 )
-from anta.device import DeviceVersion
+from anta._eos.version import EOSVersion
 from anta.models import AntaCommand
 
 if TYPE_CHECKING:
     from anta.device import AntaDevice
 
 
-class EosVersionFact(FactDefinition[DeviceVersion]):
+class EosVersionFact(FactDefinition[EOSVersion]):
     """Derive the normalized EOS version from refreshed device metadata."""
 
     key = "eos.version"
     label = "EOS version"
 
     @classmethod
-    def derive(cls, device: AntaDevice, commands: tuple[AntaCommand, ...] = ()) -> Fact[DeviceVersion]:
-        """Return the device version or a missing fact when it is unavailable."""
+    def derive(cls, device: AntaDevice, commands: tuple[AntaCommand, ...] = ()) -> Fact[EOSVersion]:
+        """Return the EOS version or an unavailable fact when it cannot be established."""
         _ = commands
         source = FactSource("device metadata", FactSourceKind.DEVICE_METADATA)
         if device.version is None:
             return cls.unavailable(FactProblemKind.MISSING, source)
+        if not isinstance(device.version, EOSVersion):
+            return cls.unavailable(FactProblemKind.INVALID, source)
         return cls.available(device.version, source)
 
 

@@ -85,7 +85,7 @@ EXPECTED_REMEDIATION = RemediationPlan(
 )
 
 if TYPE_CHECKING:
-    from anta.device import DevicePlatform, DeviceVersion
+    from anta.device import DevicePlatform
     from tests.units.anta_tests import AntaUnitTestData
 
 
@@ -175,7 +175,7 @@ def segment_security_output() -> dict[str, Any]:
 class SA142DeviceData(TypedDict):
     """Device metadata and command outputs for one SA142 production case."""
 
-    version: DeviceVersion | None
+    version: EOSVersion | None
     platform: DevicePlatform | None
     eos_data: list[dict[str, Any] | str]
 
@@ -601,11 +601,12 @@ class TestSA142Assessment(unittest.TestCase):
             )
             for definition, state in zip(definitions, states, strict=True)
         )
-        version_fact: Fact[DeviceVersion] = (
-            EosVersionFact.unavailable(FactProblemKind.MISSING, source)
-            if version is None
-            else EosVersionFact.available(cast("DeviceVersion", parse_eos_version(version)), source)
-        )
+        if version is None:
+            version_fact: Fact[EOSVersion] = EosVersionFact.unavailable(FactProblemKind.MISSING, source)
+        else:
+            parsed_version = parse_eos_version(version)
+            assert parsed_version is not None
+            version_fact = EosVersionFact.available(parsed_version, source)
         platform_value = platform_identity(platform)
         platform_fact: Fact[PlatformIdentity] = (
             PlatformIdentityFact.unavailable(FactProblemKind.MISSING, source) if platform_value is None else PlatformIdentityFact.available(platform_value, source)

@@ -16,7 +16,7 @@ from anta.models import AntaCommand
 from tests.units.anta_tests.advisories import OfflineAntaDevice
 
 if TYPE_CHECKING:
-    from anta.device import AntaDevice
+    from anta.device import AntaDevice, DeviceVersion
 
 
 @pytest.fixture(name="device")
@@ -50,6 +50,31 @@ def test_eos_version_fact_from_device_metadata(device: OfflineAntaDevice) -> Non
     assert missing.definition is EosVersionFact
     assert missing.problem is FactProblemKind.MISSING
     assert missing.source.name == "device metadata"
+
+
+def test_eos_version_fact_rejects_non_eos_device_version(device: OfflineAntaDevice) -> None:
+    """Reject device-version metadata that is not an EOS version."""
+
+    class OtherDeviceVersion:
+        """Minimal non-EOS device version used to exercise the protocol boundary."""
+
+        def __str__(self) -> str:
+            """Return a representative non-EOS version string."""
+            return "1.0.0"
+
+        def to_dict(self) -> dict[str, str | int]:
+            """Return representative serialized non-EOS version data."""
+            return {"version": "1.0.0"}
+
+    version: DeviceVersion = OtherDeviceVersion()
+    device.version = version
+
+    fact = EosVersionFact.derive(device)
+
+    assert isinstance(fact, UnavailableFact)
+    assert fact.definition is EosVersionFact
+    assert fact.problem is FactProblemKind.INVALID
+    assert fact.source.name == "device metadata"
 
 
 def test_secure_boot_supported_and_enabled(device: AntaDevice) -> None:
